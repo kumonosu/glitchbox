@@ -15,6 +15,7 @@ jobs:
         run: cmake -S . -B build -A x64
 
       - name: Build
+        id: build
         run: cmake --build build --config Release --parallel
 
       - name: Validate with pluginval
@@ -23,18 +24,23 @@ jobs:
           Invoke-WebRequest https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip -OutFile pluginval.zip
           Expand-Archive pluginval.zip -DestinationPath pluginval
           # GitHub's Windows machines have no display, so the editor tests run on Linux (under xvfb) instead.
-          .\pluginval\pluginval.exe --strictness-level 10 --validate-in-process --skip-gui-tests --timeout-ms 300000 --validate "build\Glitchbox_artefacts\Release\VST3\Glitchbox.vst3"
+          .\pluginval\pluginval.exe --strictness-level 10 --skip-gui-tests --timeout-ms 300000 --validate "build\Glitchbox_artefacts\Release\VST3\Glitchbox.vst3"
+          Write-Host "pluginval exit code: $LASTEXITCODE"
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Editor tests (informational)
+        if: always()
         continue-on-error: true
         shell: pwsh
         run: |
           .\pluginval\pluginval.exe --strictness-level 5 --timeout-ms 300000 --output-dir pluginval-logs --validate "build\Glitchbox_artefacts\Release\VST3\Glitchbox.vst3"
-          Get-ChildItem pluginval-logs -Recurse | ForEach-Object { Get-Content $_.FullName -Tail 40 }
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $code = $LASTEXITCODE
+          Get-ChildItem pluginval-logs -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName -Tail 40 }
+          Write-Host "pluginval exit code: $code"
+          exit $code
 
       - name: Upload plugin
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: Glitchbox-VST3-Windows
